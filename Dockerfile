@@ -20,14 +20,9 @@ RUN addgroup airflow \
 EXPOSE 8080 5555 8793
 
 USER airflow
-RUN mkdir ${AIRFLOW_HOME}
-RUN chown -R airflow:airflow ${AIRFLOW_HOME}
 COPY script/entrypoint.sh /entrypoint.sh
 WORKDIR ${AIRFLOW_HOME}
 ENTRYPOINT ["/entrypoint.sh"]
 
 
 ONBUILD COPY airflow_home ${AIRFLOW_HOME}/
-# chown the app directory after copying in case the copied files include
-# subdirectories that will be written to, e.g. the media directory
-ONBUILD RUN chown -R airflow:airflow ${AIRFLOW_HOME}
