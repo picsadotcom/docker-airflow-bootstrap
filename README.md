@@ -2,7 +2,7 @@
 
 Dockerfile for quickly running Airflow projects in a Docker container.
 
-Uses Python 3 with compatible AMQP libraries
+Uses Python 3 with compatible AMQP libraries.
 
 ## Usage
 
@@ -14,3 +14,7 @@ In the root of the repo for your Airflow project, add a Dockerfile for the proje
   ARG VCS_HASH=NOT_SET
 
 You're done.
+
+## Releases
+
+2017-03-17: Initial version with Airflow 1.7.1.3
