@@ -24,6 +24,7 @@ COPY script/entrypoint.sh /entrypoint.sh
 WORKDIR ${AIRFLOW_HOME}
 ENTRYPOINT ["/entrypoint.sh"]
 
+ONBUILD USER airflow
 ONBUILD COPY airflow_home ${AIRFLOW_HOME}/
 # chown the app directory after copying in case the copied files include
 # subdirectories that will be written to, e.g. the media directory
