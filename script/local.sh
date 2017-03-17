@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+AIRFLOW_HOME="./airflow_home"
+CMD="airflow"
+TRY_LOOP="10"
+EXECUTOR="Local"
+export AIRFLOW_HOME=$AIRFLOW_HOME
+export AIRFLOW__CORE__AIRFLOW_HOME=$AIRFLOW_HOME
+export AIRFLOW__CORE__DAGS_FOLDER="$AIRFLOW_HOME/dags"
+export AIRFLOW__CORE__BASE_LOG_FOLDER="$AIRFLOW_HOME/logs"
+export AIRFLOW__CORE__PLUGIN_FOLDER="$AIRFLOW_HOME/plugins"
+
+
+# Configure airflow with postgres connection string.
+export POSTGRES_HOST="localhost"
+export POSTGRES_PORT="5432"
+CONN="postgres://:@/picsa_airflow"
+echo "Setting AIRFLOW__CORE__SQL_ALCHEMY_CONN=${CONN}"
+export AIRFLOW__CORE__SQL_ALCHEMY_CONN=$CONN
+
+# Configure airflow with rabbitmq connection string.
+
+CREDS="guest:guest"
+BROKER_URL="amqp://guest:guest@localhost:5672//"
+
+# Another key Celery setting
+echo "Setting AIRFLOW__CELERY__BROKER_URL=${BROKER_URL}"
+export AIRFLOW__CELERY__BROKER_URL=$BROKER_URL
+echo "Setting AIRFLOW__CELERY__CELERY_RESULT_BACKEND=${BROKER_URL}"
+export AIRFLOW__CELERY__CELERY_RESULT_BACKEND=$BROKER_URL
+echo "Setting RABBITMQ_CREDS=${CREDS}"
+export RABBITMQ_CREDS=$CREDS
+
+# : ${FERNET_KEY:=$(python -c "from cryptography.fernet import Fernet; FERNET_KEY = Fernet.generate_key().decode(); print FERNET_KEY")}
+# FERNET_KEY=$(python -c "from cryptography.fernet import Fernet; FERNET_KEY = Fernet.generate_key().decode(); print FERNET_KEY")
+FERNET_KEY="BP04_l7C3wByNiEaEiseNiP0ZrqZ7s3qL-mkG8eHlJY="
+
+export AIRFLOW__CORE__LOAD_EXAMPLES="False"
+
+# Webserver
+export AIRFLOW__WEBSERVER__WEB_SERVER_HOST="127.0.0.1"
+export AIRFLOW__WEBSERVER__WEB_SERVER_PORT="8081"
+export AIRFLOW__WEBSERVER__AUTHENTICATE="False"
+
+# Load DAGs exemples (default: No)
+# if [ "x$LOAD_EX" = "xy" ]; then
+#     sed -i "s/load_examples = False/load_examples = True/" "$AIRFLOW_HOME"/airflow.cfg
+# fi
+
+# Install custome python package if requirements.txt is present
+if [ -e "/requirements.txt" ]; then
+    $(which pip) install --user -r /requirements.txt
+fi
+
+# Generate Fernet key
+sed -i "" "s|\$FERNET_KEY|$FERNET_KEY|" "$AIRFLOW_HOME"/airflow.cfg
+
+# wait for DB
+if [ "$1" = "webserver" ] || [ "$1" = "worker" ] || [ "$1" = "scheduler" ] ; then
+  i=0
+  while ! nc -z $POSTGRES_HOST $POSTGRES_PORT >/dev/null 2>&1 < /dev/null; do
+    i=$((i+1))
+    if [ $i -ge $TRY_LOOP ]; then
+      echo "$(date) - ${POSTGRES_HOST}:${POSTGRES_PORT} still not reachable, giving up"
+      exit 1
+    fi
+    echo "$(date) - waiting for ${POSTGRES_HOST}:${POSTGRES_PORT}... $i/$TRY_LOOP"
+    sleep 5
+  done
+  if [ "$1" = "webserver" ]; then
+    echo "Initialize database..."
+    $CMD initdb
+  fi
+  sleep 5
+fi
+
+# If we use docker-compose, we use Celery (rabbitmq container).
+if [ "x$EXECUTOR" = "xCelery" ]
+then
+# wait for rabbitmq
+  if [ "$1" = "webserver" ] || [ "$1" = "worker" ] || [ "$1" = "scheduler" ] || [ "$1" = "flower" ] ; then
+    j=0
+    while ! curl -sI -u $RABBITMQ_CREDS http://$RABBITMQ_HOST:15672/api/whoami |grep '200 OK'; do
+      j=$((j+1))
+      if [ $j -ge $TRY_LOOP ]; then
+        echo "$(date) - $RABBITMQ_HOST still not reachable, giving up"
+        exit 1
+      fi
+      echo "$(date) - waiting for RabbitMQ... $j/$TRY_LOOP"
+      sleep 5
+    done
+  fi
+  sed -i "" "s/executor = LocalExecutor/executor = CeleryExecutor/" "$AIRFLOW_HOME"/airflow.cfg
+  exec $CMD "$@"
+elif [ "x$EXECUTOR" = "xLocal" ]
+then
+  sed -i "" "s/executor = CeleryExecutor/executor = LocalExecutor/" "$AIRFLOW_HOME"/airflow.cfg
+  exec $CMD "$@"
+else
+  if [ "$1" = "version" ]; then
+    exec $CMD version
+  fi
+  sed -i "" "s/executor = CeleryExecutor/executor = SequentialExecutor/" "$AIRFLOW_HOME"/airflow.cfg
+  sed -i "" "s#sql_alchemy_conn = postgresql+psycopg2://airflow:airflow@postgres/airflow#sql_alchemy_conn = sqlite:////usr/local/airflow/airflow.db#" "$AIRFLOW_HOME"/airflow.cfg
+  echo "Initialize database..."
+  $CMD initdb
+  exec $CMD webserver
+fi
