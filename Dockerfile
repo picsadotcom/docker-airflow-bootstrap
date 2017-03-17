@@ -20,6 +20,7 @@ RUN addgroup airflow \
 EXPOSE 8080 5555 8793
 
 USER airflow
+RUN mkdir ${AIRFLOW_HOME}
 RUN chown -R airflow:airflow ${AIRFLOW_HOME}
 COPY script/entrypoint.sh /entrypoint.sh
 WORKDIR ${AIRFLOW_HOME}
